@@ -37,6 +37,10 @@ local function GetBestMapIDSafe()
     return nil
 end
 
+local function Print(msg)
+    print("|cff00ccff[FQX]|r " .. tostring(msg or ""))
+end
+
 -- 1. Create UI Frame
 local f = CreateFrame("Frame", "fr0z3nUIQuestXFrame", UIParent, "BasicFrameTemplateWithInset")
 f:SetSize(300, 190)
@@ -111,31 +115,31 @@ local function SaveID(isAccount)
 
     if isAccount then
         if acc[qid] then
-            print("|cff00ccff[QuestX]|r Already in ACCOUNT list: " .. title)
+            Print("Already in ACCOUNT list: " .. title)
             return
         end
 
         if chr[qid] then
             chr[qid] = nil
             acc[qid] = true
-            print("|cff00ccff[QuestX]|r Moved " .. title .. " to ACCOUNT list.")
+            Print("Moved " .. title .. " to ACCOUNT list.")
         else
             acc[qid] = true
-            print("|cff00ccff[QuestX]|r Added " .. title .. " to ACCOUNT list.")
+            Print("Added " .. title .. " to ACCOUNT list.")
         end
     else
         if chr[qid] then
-            print("|cff00ccff[QuestX]|r Already in CHARACTER list: " .. title)
+            Print("Already in CHARACTER list: " .. title)
             return
         end
 
         if acc[qid] then
             acc[qid] = nil
             chr[qid] = true
-            print("|cff00ccff[QuestX]|r Moved " .. title .. " to CHARACTER list.")
+            Print("Moved " .. title .. " to CHARACTER list.")
         else
             chr[qid] = true
-            print("|cff00ccff[QuestX]|r Added " .. title .. " to CHARACTER list.")
+            Print("Added " .. title .. " to CHARACTER list.")
         end
     end
 
@@ -271,14 +275,17 @@ local function TryAbandon()
                 StaticPopup_OnClick(StaticPopup1, 1)
             end
             
-            print("|cff00ccff[QuestX]|r " .. qTitle .. " Abandoned")
+            Print(tostring(qTitle) .. " Abandoned")
         end
     end
 end
 
 -- 3. Slash Commands and Events
-SLASH_FR0Z3NUIQX1 = "/qx"
-SlashCmdList["FR0Z3NUIQX"] = function() f:Show() end
+SLASH_FR0Z3NUIQX1 = "/fqx"
+SlashCmdList["FR0Z3NUIQX"] = function()
+    f:Show()
+    if editBox and editBox.SetFocus then editBox:SetFocus() end
+end
 
 f:RegisterEvent("PLAYER_LOGIN")
 f:RegisterEvent("PLAYER_REGEN_ENABLED") -- Trigger after combat ends
