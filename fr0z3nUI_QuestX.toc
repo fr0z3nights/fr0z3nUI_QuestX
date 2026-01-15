@@ -1,7 +1,7 @@
 ## Interface: 110205, 110207, 120000
 ## Title: |cff00ccfffr0z3nUI|r QuestX
-## Notes: Auto-abandons quests based on location. Use /fqx to open UI.
-## Author: fr0z3n
+## Notes: Auto-abandons Quests. Open UI /fqx
+## Author: fr0z3nights
 ## Version: 1.4
 ## SavedVariables: fr0z3nUI_QuestX_Acc
 ## SavedVariablesPerCharacter: fr0z3nUI_QuestX_Char
