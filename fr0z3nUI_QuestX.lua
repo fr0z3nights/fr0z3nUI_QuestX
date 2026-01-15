@@ -1,6 +1,45 @@
+local function InitSV()
+    fr0z3nUI_QuestX_Acc = fr0z3nUI_QuestX_Acc or {}
+    fr0z3nUI_QuestX_Char = fr0z3nUI_QuestX_Char or {}
+
+    local function NormalizeMapLists(tbl)
+        for mapID, list in pairs(tbl) do
+            if type(list) == "table" then
+                -- Migrate old array format (table.insert) to set format: [questID]=true
+                if list[1] ~= nil then
+                    local set = {}
+                    for _, qid in ipairs(list) do
+                        qid = tonumber(qid)
+                        if qid then set[qid] = true end
+                    end
+                    tbl[mapID] = set
+                end
+            end
+        end
+    end
+
+    NormalizeMapLists(fr0z3nUI_QuestX_Acc)
+    NormalizeMapLists(fr0z3nUI_QuestX_Char)
+end
+
+local function GetQuestTitleSafe(qid)
+    if not qid then return nil end
+    if C_QuestLog and C_QuestLog.GetTitleForQuestID then
+        return C_QuestLog.GetTitleForQuestID(qid)
+    end
+    return nil
+end
+
+local function GetBestMapIDSafe()
+    if C_Map and C_Map.GetBestMapForUnit then
+        return C_Map.GetBestMapForUnit("player")
+    end
+    return nil
+end
+
 -- 1. Create UI Frame
 local f = CreateFrame("Frame", "fr0z3nUIQuestXFrame", UIParent, "BasicFrameTemplateWithInset")
-f:SetSize(300, 130)
+f:SetSize(300, 190)
 f:SetPoint("CENTER")
 f:Hide()
 f:SetMovable(true)
@@ -19,22 +58,93 @@ editBox:SetPoint("TOP", 0, -30)
 editBox:SetAutoFocus(false)
 editBox:SetNumeric(true)
 
+local nameLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+nameLabel:SetPoint("TOP", editBox, "BOTTOM", 0, -8)
+nameLabel:SetWidth(f:GetWidth() - 20)
+nameLabel:SetJustifyH("CENTER")
+nameLabel:SetWordWrap(true)
+nameLabel:SetText("")
+f.nameLabel = nameLabel
+
+local existsLabel = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+existsLabel:SetPoint("TOP", nameLabel, "BOTTOM", 0, -2)
+existsLabel:SetWidth(f:GetWidth() - 20)
+existsLabel:SetJustifyH("CENTER")
+existsLabel:SetWordWrap(true)
+existsLabel:SetText("")
+f.existsLabel = existsLabel
+
 -- Helper to save IDs
+local function EnsureMapSets(mapID)
+    fr0z3nUI_QuestX_Acc[mapID] = fr0z3nUI_QuestX_Acc[mapID] or {}
+    fr0z3nUI_QuestX_Char[mapID] = fr0z3nUI_QuestX_Char[mapID] or {}
+
+    -- If an older array slipped through, migrate it now.
+    if fr0z3nUI_QuestX_Acc[mapID][1] ~= nil then
+        local set = {}
+        for _, qid in ipairs(fr0z3nUI_QuestX_Acc[mapID]) do
+            qid = tonumber(qid)
+            if qid then set[qid] = true end
+        end
+        fr0z3nUI_QuestX_Acc[mapID] = set
+    end
+    if fr0z3nUI_QuestX_Char[mapID][1] ~= nil then
+        local set = {}
+        for _, qid in ipairs(fr0z3nUI_QuestX_Char[mapID]) do
+            qid = tonumber(qid)
+            if qid then set[qid] = true end
+        end
+        fr0z3nUI_QuestX_Char[mapID] = set
+    end
+end
+
 local function SaveID(isAccount)
-    local qid = tonumber(editBox:GetText())
-    local mapID = C_Map.GetBestMapForUnit("player")
+    InitSV()
+    local qid = f.validQID or tonumber(editBox:GetText())
+    local mapID = GetBestMapIDSafe()
     if not qid or not mapID then return end
 
+    EnsureMapSets(mapID)
+    local acc = fr0z3nUI_QuestX_Acc[mapID]
+    local chr = fr0z3nUI_QuestX_Char[mapID]
+    local title = GetQuestTitleSafe(qid) or tostring(qid)
+
     if isAccount then
-        fr0z3nUI_QuestX_Acc[mapID] = fr0z3nUI_QuestX_Acc[mapID] or {}
-        table.insert(fr0z3nUI_QuestX_Acc[mapID], qid)
-        print("|cff00ccff[QuestX]|r Added " .. qid .. " to ACCOUNT list.")
+        if acc[qid] then
+            print("|cff00ccff[QuestX]|r Already in ACCOUNT list: " .. title)
+            return
+        end
+
+        if chr[qid] then
+            chr[qid] = nil
+            acc[qid] = true
+            print("|cff00ccff[QuestX]|r Moved " .. title .. " to ACCOUNT list.")
+        else
+            acc[qid] = true
+            print("|cff00ccff[QuestX]|r Added " .. title .. " to ACCOUNT list.")
+        end
     else
-        fr0z3nUI_QuestX_Char[mapID] = fr0z3nUI_QuestX_Char[mapID] or {}
-        table.insert(fr0z3nUI_QuestX_Char[mapID], qid)
-        print("|cff00ccff[QuestX]|r Added " .. qid .. " to CHARACTER list.")
+        if chr[qid] then
+            print("|cff00ccff[QuestX]|r Already in CHARACTER list: " .. title)
+            return
+        end
+
+        if acc[qid] then
+            acc[qid] = nil
+            chr[qid] = true
+            print("|cff00ccff[QuestX]|r Moved " .. title .. " to CHARACTER list.")
+        else
+            chr[qid] = true
+            print("|cff00ccff[QuestX]|r Added " .. title .. " to CHARACTER list.")
+        end
     end
+
     editBox:SetText("")
+    f.validQID = nil
+    if f.nameLabel then f.nameLabel:SetText("") end
+    if f.existsLabel then f.existsLabel:SetText("") end
+    if f.btnChar then f.btnChar:Disable() end
+    if f.btnAcc then f.btnAcc:Disable() end
     f:Hide()
 end
 
@@ -44,12 +154,87 @@ btnChar:SetPoint("BOTTOMLEFT", 10, 10)
 btnChar:SetSize(135, 25)
 btnChar:SetText("Add to Character")
 btnChar:SetScript("OnClick", function() SaveID(false) end)
+btnChar:Disable()
+f.btnChar = btnChar
 
 local btnAcc = CreateFrame("Button", nil, f, "GameMenuButtonTemplate")
 btnAcc:SetPoint("BOTTOMRIGHT", -10, 10)
 btnAcc:SetSize(135, 25)
 btnAcc:SetText("Add to Account")
 btnAcc:SetScript("OnClick", function() SaveID(true) end)
+btnAcc:Disable()
+f.btnAcc = btnAcc
+
+local function ClearValidationUI()
+    f.validQID = nil
+    if f.nameLabel then f.nameLabel:SetText("") end
+    if f.existsLabel then f.existsLabel:SetText("") end
+    if f.btnChar then f.btnChar:Disable() end
+    if f.btnAcc then f.btnAcc:Disable() end
+end
+
+local function DoValidate()
+    InitSV()
+    local mapID = GetBestMapIDSafe()
+    local text = (editBox:GetText() or "")
+    if text == "" then
+        ClearValidationUI()
+        return
+    end
+
+    local qid = tonumber(text)
+    if not qid or not mapID then
+        ClearValidationUI()
+        if f.nameLabel then f.nameLabel:SetText("|cffff0000Invalid ID|r") end
+        return
+    end
+
+    EnsureMapSets(mapID)
+    local acc = fr0z3nUI_QuestX_Acc[mapID]
+    local chr = fr0z3nUI_QuestX_Char[mapID]
+    local title = GetQuestTitleSafe(qid)
+    if title then
+        if f.nameLabel then f.nameLabel:SetText("|cffffff00" .. title .. "|r") end
+    else
+        if f.nameLabel then f.nameLabel:SetText("|cffff9900Quest not found (may need cache)|r") end
+    end
+
+    local inAcc = (acc and acc[qid]) and true or false
+    local inChr = (chr and chr[qid]) and true or false
+
+    if f.existsLabel then
+        local a = inAcc and "|cff00ff00YES|r" or "|cffff0000NO|r"
+        local c = inChr and "|cff00ff00YES|r" or "|cffff0000NO|r"
+        f.existsLabel:SetText("Account: " .. a .. "   Character: " .. c)
+    end
+
+    f.validQID = qid
+    if f.btnAcc then
+        if inAcc then f.btnAcc:Disable() else f.btnAcc:Enable() end
+    end
+    if f.btnChar then
+        if inChr then f.btnChar:Disable() else f.btnChar:Enable() end
+    end
+end
+
+editBox:SetScript("OnTextChanged", function(self, userInput)
+    local txt = self:GetText() or ""
+
+    if userInput then
+        local cleaned = txt:gsub("%D", "")
+        if txt ~= cleaned then
+            self:SetText(cleaned)
+            if self.SetCursorPosition then self:SetCursorPosition(#cleaned) end
+            txt = cleaned
+        end
+    end
+
+    ClearValidationUI()
+    if userInput then
+        if f._validateTimer then f._validateTimer:Cancel() end
+        f._validateTimer = C_Timer.NewTimer(0.7, DoValidate)
+    end
+end)
 
 -- 2. Logic: Check and Abandon
 local function TryAbandon()
@@ -60,11 +245,13 @@ local function TryAbandon()
     if not mapID then return end
 
     local targets = {}
+    InitSV()
+
     if fr0z3nUI_QuestX_Acc and fr0z3nUI_QuestX_Acc[mapID] then
-        for _, id in ipairs(fr0z3nUI_QuestX_Acc[mapID]) do targets[id] = true end
+        for id in pairs(fr0z3nUI_QuestX_Acc[mapID]) do targets[id] = true end
     end
     if fr0z3nUI_QuestX_Char and fr0z3nUI_QuestX_Char[mapID] then
-        for _, id in ipairs(fr0z3nUI_QuestX_Char[mapID]) do targets[id] = true end
+        for id in pairs(fr0z3nUI_QuestX_Char[mapID]) do targets[id] = true end
     end
 
     -- Optimized Loop for 2026
@@ -74,7 +261,8 @@ local function TryAbandon()
             local info = C_QuestLog.GetInfo(i)
             local qTitle = (info and info.title) or qID
             
-            C_QuestLog.SetSelectedQuest(qID)
+            -- SetSelectedQuest expects a quest log index
+            C_QuestLog.SetSelectedQuest(i)
             C_QuestLog.SetAbandonQuest()
             C_QuestLog.AbandonQuest()
             
@@ -99,8 +287,7 @@ f:RegisterEvent("QUEST_ACCEPTED")
 
 f:SetScript("OnEvent", function(_, event)
     if event == "PLAYER_LOGIN" then
-        fr0z3nUI_QuestX_Acc = fr0z3nUI_QuestX_Acc or {}
-        fr0z3nUI_QuestX_Char = fr0z3nUI_QuestX_Char or {}
+        InitSV()
     end
     
     -- Small delay to ensure quest log sync
