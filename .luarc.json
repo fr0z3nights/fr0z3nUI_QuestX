@@ -1,0 +1,35 @@
+{
+  "$schema": "https://raw.githubusercontent.com/LuaLS/vscode-lua/master/setting/schema.json",
+  "runtime.version": "Lua 5.1",
+  "workspace.checkThirdParty": false,
+  "type.weakUnionCheck": true,
+  "runtime.builtin": {
+    "basic": "enable",
+    "debug": "enable",
+    "io": "enable",
+    "math": "enable",
+    "os": "enable",
+    "package": "enable",
+    "string": "enable",
+    "table": "enable",
+    "utf8": "enable"
+  },
+  "diagnostics.globals": [
+    "SlashCmdList",
+    "CreateFrame",
+    "UIParent",
+    "GameFontHighlight",
+    "GameFontNormal",
+    "BasicFrameTemplateWithInset",
+    "InputBoxTemplate",
+    "GameMenuButtonTemplate",
+
+    "C_Map",
+    "C_QuestLog",
+    "C_Timer",
+
+    "InCombatLockdown",
+    "StaticPopup1",
+    "StaticPopup_OnClick"
+  ]
+}
