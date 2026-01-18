@@ -1,4 +1,5 @@
-## Interface: 110205, 110207, 120000
+## Interface: 120000
+# Interface helper (in-game): /run print("TOC interface =", select(4, GetBuildInfo()))
 ## Title: |cff00ccfffr0z3nUI|r QuestX
 ## Notes: Auto-abandons Quests. Open UI /fqx
 ## Author: fr0z3nights

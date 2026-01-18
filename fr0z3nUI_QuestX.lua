@@ -43,6 +43,20 @@ end
 
 -- 1. Create UI Frame
 local f = CreateFrame("Frame", "fr0z3nUIQuestXFrame", UIParent, "BasicFrameTemplateWithInset")
+
+-- Allow closing with Escape.
+do
+    local special = _G and _G["UISpecialFrames"]
+    if type(special) == "table" then
+        local name = "fr0z3nUIQuestXFrame"
+        local exists = false
+        for i = 1, #special do
+            if special[i] == name then exists = true break end
+        end
+        if not exists and table and table.insert then table.insert(special, name) end
+    end
+end
+
 f:SetSize(300, 190)
 f:SetPoint("CENTER")
 f:Hide()
