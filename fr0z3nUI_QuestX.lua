@@ -66,15 +66,63 @@ f:RegisterForDrag("LeftButton")
 f:SetScript("OnDragStart", f.StartMoving)
 f:SetScript("OnDragStop", f.StopMovingOrSizing)
 
-f.title = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-f.title:SetPoint("TOP", 0, -5)
-f.title:SetText("fr0z3nUI QuestX: Add Quest ID")
+do
+    local t = f.TitleText
+    if not t then
+        t = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        t:SetPoint("TOPLEFT", 12, -10)
+        t:SetJustifyH("LEFT")
+    end
+    if t.SetText then
+        t:SetText("|cff00ccff[FQX]|r QuestX")
+    end
+    f.title = t
+end
 
 local editBox = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
 editBox:SetSize(150, 30)
 editBox:SetPoint("TOP", 0, -30)
 editBox:SetAutoFocus(false)
 editBox:SetNumeric(true)
+
+-- Make the input look like a clean field (hide the template frame) + add a placeholder.
+local function HideEditBoxFrame(box)
+    if not box or not box.GetRegions then return end
+    local regions = { box:GetRegions() }
+    for i = 1, #regions do
+        local r = regions[i]
+        if r and r.GetObjectType and r:GetObjectType() == "Texture" then
+            r:Hide()
+        end
+    end
+end
+
+HideEditBoxFrame(editBox)
+editBox:SetTextInsets(6, 6, 0, 0)
+editBox:SetJustifyH("CENTER")
+if editBox.SetJustifyV then editBox:SetJustifyV("MIDDLE") end
+
+local ph = editBox:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+ph:SetPoint("CENTER", editBox, "CENTER", 0, 0)
+ph:SetJustifyH("CENTER")
+ph:SetText("Enter QuestID")
+ph:Show()
+f._placeholder = ph
+
+local function UpdateInputPlaceholder()
+    if not (ph and editBox and editBox.GetText) then return end
+    local txt = tostring(editBox:GetText() or "")
+    local focused = (editBox.HasFocus and editBox:HasFocus()) and true or false
+    if txt == "" and not focused then
+        ph:Show()
+    else
+        ph:Hide()
+    end
+end
+
+editBox:HookScript("OnEditFocusGained", function() UpdateInputPlaceholder() end)
+editBox:HookScript("OnEditFocusLost", function() UpdateInputPlaceholder() end)
+editBox:HookScript("OnShow", function() UpdateInputPlaceholder() end)
 
 local nameLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 nameLabel:SetPoint("TOP", editBox, "BOTTOM", 0, -8)
@@ -248,6 +296,10 @@ editBox:SetScript("OnTextChanged", function(self, userInput)
     end
 
     ClearValidationUI()
+    if f and f._placeholder then
+        local focused = (self.HasFocus and self:HasFocus()) and true or false
+        if txt == "" and not focused then f._placeholder:Show() else f._placeholder:Hide() end
+    end
     if userInput then
         if f._validateTimer then f._validateTimer:Cancel() end
         f._validateTimer = C_Timer.NewTimer(0.7, DoValidate)
