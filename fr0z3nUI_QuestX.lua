@@ -1,6 +1,25 @@
 local function InitSV()
     fr0z3nUI_QuestX_Acc = fr0z3nUI_QuestX_Acc or {}
     fr0z3nUI_QuestX_Char = fr0z3nUI_QuestX_Char or {}
+    fr0z3nUI_QuestX_Settings = fr0z3nUI_QuestX_Settings or { disabled = {} }
+    fr0z3nUI_QuestX_CharSettings = fr0z3nUI_QuestX_CharSettings or { disabled = {} }
+
+    if type(fr0z3nUI_QuestX_Settings.disabled) ~= "table" then
+        fr0z3nUI_QuestX_Settings.disabled = {}
+    end
+    if type(fr0z3nUI_QuestX_CharSettings.disabled) ~= "table" then
+        fr0z3nUI_QuestX_CharSettings.disabled = {}
+    end
+
+    if fr0z3nUI_QuestX_Settings.scopeMode == nil then
+        -- Default: RESTING (reduces auto-run while out questing)
+        fr0z3nUI_QuestX_Settings.scopeMode = "RESTING"
+    else
+        fr0z3nUI_QuestX_Settings.scopeMode = tostring(fr0z3nUI_QuestX_Settings.scopeMode):upper()
+        if fr0z3nUI_QuestX_Settings.scopeMode ~= "MAP" and fr0z3nUI_QuestX_Settings.scopeMode ~= "RESTING" then
+            fr0z3nUI_QuestX_Settings.scopeMode = "RESTING"
+        end
+    end
 
     local function NormalizeMapLists(tbl)
         for mapID, list in pairs(tbl) do
@@ -37,6 +56,28 @@ local function GetBestMapIDSafe()
     return nil
 end
 
+local function GetScopeMode()
+    InitSV()
+    return tostring(fr0z3nUI_QuestX_Settings.scopeMode or "RESTING"):upper()
+end
+
+local function GetScopeKey()
+    local mode = GetScopeMode()
+    if mode == "RESTING" then
+        return "RESTING"
+    end
+    return GetBestMapIDSafe()
+end
+
+local function ShouldTryAbandonNow()
+    if GetScopeMode() == "RESTING" then
+        if IsResting and not IsResting() then
+            return false
+        end
+    end
+    return true
+end
+
 local function Print(msg)
     print("|cff00ccff[FQX]|r " .. tostring(msg or ""))
 end
@@ -56,6 +97,9 @@ do
         if not exists and table and table.insert then table.insert(special, name) end
     end
 end
+
+local editBox
+local DoValidate
 
 f:SetSize(300, 190)
 f:SetPoint("CENTER")
@@ -79,7 +123,50 @@ do
     f.title = t
 end
 
-local editBox = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
+local function UpdateScopeButton()
+    if not f.btnScope then return end
+    local mode = GetScopeMode()
+    if mode == "MAP" then
+        f.btnScope:SetText("Scope: MAP")
+    else
+        f.btnScope:SetText("Scope: RESTING")
+    end
+end
+
+local btnScope = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+btnScope:SetSize(120, 20)
+btnScope:SetPoint("TOPRIGHT", -34, -24)
+btnScope:SetScript("OnClick", function()
+    InitSV()
+    local cur = GetScopeMode()
+    fr0z3nUI_QuestX_Settings.scopeMode = (cur == "MAP") and "RESTING" or "MAP"
+    UpdateScopeButton()
+    if f and f.IsShown and f:IsShown() then
+        C_Timer.After(0, function()
+            if editBox and editBox.GetText and editBox:GetText() ~= "" then
+                DoValidate()
+            end
+        end)
+    end
+end)
+btnScope:SetScript("OnEnter", function()
+    if GameTooltip then
+        GameTooltip:SetOwner(f, "ANCHOR_NONE")
+        GameTooltip:ClearAllPoints()
+        GameTooltip:SetPoint("TOPRIGHT", btnScope, "BOTTOMRIGHT", 0, -6)
+        GameTooltip:SetText("Auto-Abandon Scope")
+        GameTooltip:AddLine("MAP: uses current mapID; runs anywhere.", 1, 1, 1, true)
+        GameTooltip:AddLine("RESTING: uses one shared list; only runs while resting.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end
+end)
+btnScope:SetScript("OnLeave", function()
+    if GameTooltip then GameTooltip:Hide() end
+end)
+f.btnScope = btnScope
+UpdateScopeButton()
+
+editBox = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
 editBox:SetSize(150, 30)
 editBox:SetPoint("TOP", 0, -30)
 editBox:SetAutoFocus(false)
@@ -140,6 +227,14 @@ existsLabel:SetWordWrap(true)
 existsLabel:SetText("")
 f.existsLabel = existsLabel
 
+local reasonLabel = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+reasonLabel:SetPoint("TOP", existsLabel, "BOTTOM", 0, -2)
+reasonLabel:SetWidth(f:GetWidth() - 20)
+reasonLabel:SetJustifyH("CENTER")
+reasonLabel:SetWordWrap(true)
+reasonLabel:SetText("")
+f.reasonLabel = reasonLabel
+
 -- Helper to save IDs
 local function EnsureMapSets(mapID)
     fr0z3nUI_QuestX_Acc[mapID] = fr0z3nUI_QuestX_Acc[mapID] or {}
@@ -164,15 +259,33 @@ local function EnsureMapSets(mapID)
     end
 end
 
+local function EnsureDisabledSets(mapID)
+    InitSV()
+    fr0z3nUI_QuestX_Settings.disabled[mapID] = fr0z3nUI_QuestX_Settings.disabled[mapID] or {}
+    fr0z3nUI_QuestX_CharSettings.disabled[mapID] = fr0z3nUI_QuestX_CharSettings.disabled[mapID] or {}
+end
+
+local function SetButtonState(btn, label, isDisabled)
+    if not btn then return end
+    if isDisabled then
+        btn:SetText("|cffffff00" .. label .. "|r") -- yellow = re-enable
+    else
+        btn:SetText("|cffff0000" .. label .. "|r") -- red = disable
+    end
+end
+
 local function SaveID(isAccount)
     InitSV()
     local qid = f.validQID or tonumber(editBox:GetText())
-    local mapID = GetBestMapIDSafe()
-    if not qid or not mapID then return end
+    local scopeKey = GetScopeKey()
+    if not qid or not scopeKey then return end
 
-    EnsureMapSets(mapID)
-    local acc = fr0z3nUI_QuestX_Acc[mapID]
-    local chr = fr0z3nUI_QuestX_Char[mapID]
+    EnsureMapSets(scopeKey)
+    EnsureDisabledSets(scopeKey)
+    local acc = fr0z3nUI_QuestX_Acc[scopeKey]
+    local chr = fr0z3nUI_QuestX_Char[scopeKey]
+    local accDis = fr0z3nUI_QuestX_Settings.disabled[scopeKey]
+    local chrDis = fr0z3nUI_QuestX_CharSettings.disabled[scopeKey]
     local title = GetQuestTitleSafe(qid) or tostring(qid)
 
     if isAccount then
@@ -183,10 +296,13 @@ local function SaveID(isAccount)
 
         if chr[qid] then
             chr[qid] = nil
+            chrDis[qid] = nil
             acc[qid] = true
+            accDis[qid] = nil
             Print("Moved " .. title .. " to ACCOUNT list.")
         else
             acc[qid] = true
+            accDis[qid] = nil
             Print("Added " .. title .. " to ACCOUNT list.")
         end
     else
@@ -197,10 +313,13 @@ local function SaveID(isAccount)
 
         if acc[qid] then
             acc[qid] = nil
+            accDis[qid] = nil
             chr[qid] = true
+            chrDis[qid] = nil
             Print("Moved " .. title .. " to CHARACTER list.")
         else
             chr[qid] = true
+            chrDis[qid] = nil
             Print("Added " .. title .. " to CHARACTER list.")
         end
     end
@@ -209,6 +328,7 @@ local function SaveID(isAccount)
     f.validQID = nil
     if f.nameLabel then f.nameLabel:SetText("") end
     if f.existsLabel then f.existsLabel:SetText("") end
+    if f.reasonLabel then f.reasonLabel:SetText("") end
     if f.btnChar then f.btnChar:Disable() end
     if f.btnAcc then f.btnAcc:Disable() end
     f:Hide()
@@ -235,13 +355,14 @@ local function ClearValidationUI()
     f.validQID = nil
     if f.nameLabel then f.nameLabel:SetText("") end
     if f.existsLabel then f.existsLabel:SetText("") end
+    if f.reasonLabel then f.reasonLabel:SetText("") end
     if f.btnChar then f.btnChar:Disable() end
     if f.btnAcc then f.btnAcc:Disable() end
 end
 
-local function DoValidate()
+DoValidate = function()
     InitSV()
-    local mapID = GetBestMapIDSafe()
+    local scopeKey = GetScopeKey()
     local text = (editBox:GetText() or "")
     if text == "" then
         ClearValidationUI()
@@ -249,15 +370,18 @@ local function DoValidate()
     end
 
     local qid = tonumber(text)
-    if not qid or not mapID then
+    if not qid or not scopeKey then
         ClearValidationUI()
         if f.nameLabel then f.nameLabel:SetText("|cffff0000Invalid ID|r") end
         return
     end
 
-    EnsureMapSets(mapID)
-    local acc = fr0z3nUI_QuestX_Acc[mapID]
-    local chr = fr0z3nUI_QuestX_Char[mapID]
+    EnsureMapSets(scopeKey)
+    local acc = fr0z3nUI_QuestX_Acc[scopeKey]
+    local chr = fr0z3nUI_QuestX_Char[scopeKey]
+    EnsureDisabledSets(scopeKey)
+    local accDis = fr0z3nUI_QuestX_Settings.disabled[scopeKey]
+    local chrDis = fr0z3nUI_QuestX_CharSettings.disabled[scopeKey]
     local title = GetQuestTitleSafe(qid)
     if title then
         if f.nameLabel then f.nameLabel:SetText("|cffffff00" .. title .. "|r") end
@@ -268,18 +392,73 @@ local function DoValidate()
     local inAcc = (acc and acc[qid]) and true or false
     local inChr = (chr and chr[qid]) and true or false
 
+    local disAcc = (inAcc and accDis and accDis[qid]) and true or false
+    local disChr = (inChr and chrDis and chrDis[qid]) and true or false
+
     if f.existsLabel then
         local a = inAcc and "|cff00ff00YES|r" or "|cffff0000NO|r"
         local c = inChr and "|cff00ff00YES|r" or "|cffff0000NO|r"
         f.existsLabel:SetText("Account: " .. a .. "   Character: " .. c)
     end
 
+    if f.reasonLabel then
+        if inAcc or inChr then
+            f.reasonLabel:SetText("|cffaaaaaaRed = disable auto-abandon. Yellow = re-enable.|r")
+        else
+            f.reasonLabel:SetText("")
+        end
+    end
+
     f.validQID = qid
     if f.btnAcc then
-        if inAcc then f.btnAcc:Disable() else f.btnAcc:Enable() end
+        f.btnAcc:Enable()
+        if inAcc then
+            SetButtonState(f.btnAcc, "Account", disAcc)
+            f.btnAcc:SetScript("OnClick", function()
+                InitSV()
+                local key = GetScopeKey()
+                if not key then return end
+                EnsureDisabledSets(key)
+                local t = fr0z3nUI_QuestX_Settings.disabled[key]
+                local title2 = GetQuestTitleSafe(qid) or tostring(qid)
+                if t[qid] then
+                    t[qid] = nil
+                    Print("'" .. title2 .. "' will now abandon (ACCOUNT)")
+                else
+                    t[qid] = true
+                    Print("'" .. title2 .. "' will NOT abandon (ACCOUNT)")
+                end
+                DoValidate()
+            end)
+        else
+            f.btnAcc:SetText("Add to Account")
+            f.btnAcc:SetScript("OnClick", function() SaveID(true) end)
+        end
     end
     if f.btnChar then
-        if inChr then f.btnChar:Disable() else f.btnChar:Enable() end
+        f.btnChar:Enable()
+        if inChr then
+            SetButtonState(f.btnChar, "Character", disChr)
+            f.btnChar:SetScript("OnClick", function()
+                InitSV()
+                local key = GetScopeKey()
+                if not key then return end
+                EnsureDisabledSets(key)
+                local t = fr0z3nUI_QuestX_CharSettings.disabled[key]
+                local title2 = GetQuestTitleSafe(qid) or tostring(qid)
+                if t[qid] then
+                    t[qid] = nil
+                    Print("'" .. title2 .. "' will now abandon (CHARACTER)")
+                else
+                    t[qid] = true
+                    Print("'" .. title2 .. "' will NOT abandon (CHARACTER)")
+                end
+                DoValidate()
+            end)
+        else
+            f.btnChar:SetText("Add to Character")
+            f.btnChar:SetScript("OnClick", function() SaveID(false) end)
+        end
     end
 end
 
@@ -311,17 +490,30 @@ local function TryAbandon()
     -- Safety: Don't try to abandon in combat to avoid UI Taint
     if InCombatLockdown() then return end
 
-    local mapID = C_Map.GetBestMapForUnit("player")
-    if not mapID then return end
+    if not ShouldTryAbandonNow() then return end
+
+    local scopeKey = GetScopeKey()
+    if not scopeKey then return end
 
     local targets = {}
     InitSV()
 
-    if fr0z3nUI_QuestX_Acc and fr0z3nUI_QuestX_Acc[mapID] then
-        for id in pairs(fr0z3nUI_QuestX_Acc[mapID]) do targets[id] = true end
+    local accDisabled = (fr0z3nUI_QuestX_Settings and fr0z3nUI_QuestX_Settings.disabled and fr0z3nUI_QuestX_Settings.disabled[scopeKey]) or nil
+    local chrDisabled = (fr0z3nUI_QuestX_CharSettings and fr0z3nUI_QuestX_CharSettings.disabled and fr0z3nUI_QuestX_CharSettings.disabled[scopeKey]) or nil
+
+    if fr0z3nUI_QuestX_Acc and fr0z3nUI_QuestX_Acc[scopeKey] then
+        for id in pairs(fr0z3nUI_QuestX_Acc[scopeKey]) do
+            if not (accDisabled and accDisabled[id]) then
+                targets[id] = true
+            end
+        end
     end
-    if fr0z3nUI_QuestX_Char and fr0z3nUI_QuestX_Char[mapID] then
-        for id in pairs(fr0z3nUI_QuestX_Char[mapID]) do targets[id] = true end
+    if fr0z3nUI_QuestX_Char and fr0z3nUI_QuestX_Char[scopeKey] then
+        for id in pairs(fr0z3nUI_QuestX_Char[scopeKey]) do
+            if not (chrDisabled and chrDisabled[id]) then
+                targets[id] = true
+            end
+        end
     end
 
     -- Optimized Loop for 2026
@@ -354,15 +546,25 @@ SlashCmdList["FR0Z3NUIQX"] = function()
 end
 
 f:RegisterEvent("PLAYER_LOGIN")
+f:RegisterEvent("PLAYER_ENTERING_WORLD")
 f:RegisterEvent("PLAYER_REGEN_ENABLED") -- Trigger after combat ends
 f:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 f:RegisterEvent("QUEST_ACCEPTED")
 
-f:SetScript("OnEvent", function(_, event)
-    if event == "PLAYER_LOGIN" then
-        InitSV()
+local function QueueTryAbandon()
+    if not ShouldTryAbandonNow() then return end
+    if f._abandonTimer then
+        f._abandonTimer:Cancel()
+        f._abandonTimer = nil
     end
-    
-    -- Small delay to ensure quest log sync
-    C_Timer.After(0.5, TryAbandon)
+    f._abandonTimer = C_Timer.NewTimer(0.5, TryAbandon)
+end
+
+f:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
+        InitSV()
+        UpdateScopeButton()
+    end
+
+    QueueTryAbandon()
 end)
