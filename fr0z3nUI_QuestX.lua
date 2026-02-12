@@ -336,7 +336,7 @@ end
 
 -- UI Buttons
 local btnChar = CreateFrame("Button", nil, f, "GameMenuButtonTemplate")
-btnChar:SetPoint("BOTTOMLEFT", 10, 10)
+btnChar:SetPoint("BOTTOMLEFT", 10, 42)
 btnChar:SetSize(135, 25)
 btnChar:SetText("Add to Character")
 btnChar:SetScript("OnClick", function() SaveID(false) end)
@@ -344,12 +344,22 @@ btnChar:Disable()
 f.btnChar = btnChar
 
 local btnAcc = CreateFrame("Button", nil, f, "GameMenuButtonTemplate")
-btnAcc:SetPoint("BOTTOMRIGHT", -10, 10)
+btnAcc:SetPoint("BOTTOMRIGHT", -10, 42)
 btnAcc:SetSize(135, 25)
 btnAcc:SetText("Add to Account")
 btnAcc:SetScript("OnClick", function() SaveID(true) end)
 btnAcc:Disable()
 f.btnAcc = btnAcc
+
+local reloadBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+reloadBtn:SetSize(90, 22)
+reloadBtn:SetPoint("BOTTOMRIGHT", -10, 10)
+reloadBtn:SetText("Reload UI")
+reloadBtn:SetScript("OnClick", function()
+    local r = _G and _G["ReloadUI"]
+    if r then r() end
+end)
+f._reloadBtn = reloadBtn
 
 local function ClearValidationUI()
     f.validQID = nil
