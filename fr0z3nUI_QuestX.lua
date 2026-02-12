@@ -274,6 +274,43 @@ local function SetButtonState(btn, label, isDisabled)
     end
 end
 
+local function SetButtonColor(btn, label, state)
+    if not btn then return end
+    if state == "inactive" then
+        btn:SetText("|cffffff00" .. label .. "|r") -- yellow
+        return
+    end
+    if state == "active" then
+        btn:SetText("|cff00ff00" .. label .. "|r") -- green
+        return
+    end
+    if state == "disabled" then
+        btn:SetText("|cffff9900" .. label .. "|r") -- orange
+        return
+    end
+    btn:SetText(label)
+end
+
+local function SetDynamicTip(btn, getLines)
+    if not (btn and btn.SetScript and getLines) then return end
+    btn:SetScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        local title, l1, l2, l3 = getLines()
+        if not title then return end
+        GameTooltip:SetOwner(self, "ANCHOR_NONE")
+        GameTooltip:ClearAllPoints()
+        GameTooltip:SetPoint("TOP", self, "BOTTOM", 0, -6)
+        GameTooltip:SetText(title)
+        if l1 then GameTooltip:AddLine(l1, 1, 1, 1, true) end
+        if l2 then GameTooltip:AddLine(l2, 1, 1, 1, true) end
+        if l3 then GameTooltip:AddLine(l3, 1, 1, 1, true) end
+        GameTooltip:Show()
+    end)
+    btn:SetScript("OnLeave", function()
+        if GameTooltip then GameTooltip:Hide() end
+    end)
+end
+
 local function SaveID(isAccount)
     InitSV()
     local qid = f.validQID or tonumber(editBox:GetText())
@@ -340,6 +377,7 @@ btnChar:SetPoint("BOTTOMLEFT", 10, 42)
 btnChar:SetSize(135, 25)
 btnChar:SetText("Add to Character")
 btnChar:SetScript("OnClick", function() SaveID(false) end)
+if btnChar.RegisterForClicks then btnChar:RegisterForClicks("LeftButtonUp", "RightButtonUp") end
 btnChar:Disable()
 f.btnChar = btnChar
 
@@ -348,6 +386,7 @@ btnAcc:SetPoint("BOTTOMRIGHT", -10, 42)
 btnAcc:SetSize(135, 25)
 btnAcc:SetText("Add to Account")
 btnAcc:SetScript("OnClick", function() SaveID(true) end)
+if btnAcc.RegisterForClicks then btnAcc:RegisterForClicks("LeftButtonUp", "RightButtonUp") end
 btnAcc:Disable()
 f.btnAcc = btnAcc
 
@@ -411,64 +450,111 @@ DoValidate = function()
         f.existsLabel:SetText("Account: " .. a .. "   Character: " .. c)
     end
 
-    if f.reasonLabel then
-        if inAcc or inChr then
-            f.reasonLabel:SetText("|cffaaaaaaRed = disable auto-abandon. Yellow = re-enable.|r")
-        else
-            f.reasonLabel:SetText("")
-        end
-    end
+    if f.reasonLabel then f.reasonLabel:SetText("") end
 
     f.validQID = qid
     if f.btnAcc then
         f.btnAcc:Enable()
-        if inAcc then
-            SetButtonState(f.btnAcc, "Account", disAcc)
-            f.btnAcc:SetScript("OnClick", function()
-                InitSV()
-                local key = GetScopeKey()
-                if not key then return end
-                EnsureDisabledSets(key)
-                local t = fr0z3nUI_QuestX_Settings.disabled[key]
-                local title2 = GetQuestTitleSafe(qid) or tostring(qid)
-                if t[qid] then
-                    t[qid] = nil
-                    Print("'" .. title2 .. "' will now abandon (ACCOUNT)")
-                else
-                    t[qid] = true
-                    Print("'" .. title2 .. "' will NOT abandon (ACCOUNT)")
-                end
+        SetButtonColor(f.btnAcc, "Account", (not inAcc) and "inactive" or (disAcc and "disabled" or "active"))
+        f.btnAcc:SetScript("OnClick", function(_, mouseButton)
+            if not inAcc then
+                if mouseButton == "RightButton" then return end
+                SaveID(true)
+                return
+            end
+
+            InitSV()
+            local key = GetScopeKey()
+            if not key then return end
+            EnsureMapSets(key)
+            EnsureDisabledSets(key)
+            local acc2 = fr0z3nUI_QuestX_Acc[key]
+            local accDis2 = fr0z3nUI_QuestX_Settings.disabled[key]
+            local title2 = GetQuestTitleSafe(qid) or tostring(qid)
+
+            if mouseButton == "RightButton" then
+                acc2[qid] = nil
+                accDis2[qid] = nil
+                Print("Removed from ACCOUNT list: " .. title2)
                 DoValidate()
-            end)
-        else
-            f.btnAcc:SetText("Add to Account")
-            f.btnAcc:SetScript("OnClick", function() SaveID(true) end)
-        end
+                return
+            end
+
+            if accDis2[qid] then
+                accDis2[qid] = nil
+                Print("'" .. title2 .. "' will now abandon (ACCOUNT)")
+            else
+                accDis2[qid] = true
+                Print("'" .. title2 .. "' will NOT abandon (ACCOUNT)")
+            end
+            DoValidate()
+        end)
+
+        SetDynamicTip(f.btnAcc, function()
+            if not qid then return "Account", "Enter a QuestID first." end
+            if not inAcc then
+                if inChr then
+                    return "Account (Inactive)", "Left-click: move to Account list", "(Removes from Character list)"
+                end
+                return "Account (Inactive)", "Left-click: add to Account list"
+            end
+            if disAcc then
+                return "Account (Disabled)", "Left-click: re-enable auto-abandon (Account)", "Right-click: remove from Account list"
+            end
+            return "Account (Active)", "Left-click: disable auto-abandon (Account)", "Right-click: remove from Account list"
+        end)
     end
+
     if f.btnChar then
         f.btnChar:Enable()
-        if inChr then
-            SetButtonState(f.btnChar, "Character", disChr)
-            f.btnChar:SetScript("OnClick", function()
-                InitSV()
-                local key = GetScopeKey()
-                if not key then return end
-                EnsureDisabledSets(key)
-                local t = fr0z3nUI_QuestX_CharSettings.disabled[key]
-                local title2 = GetQuestTitleSafe(qid) or tostring(qid)
-                if t[qid] then
-                    t[qid] = nil
-                    Print("'" .. title2 .. "' will now abandon (CHARACTER)")
-                else
-                    t[qid] = true
-                    Print("'" .. title2 .. "' will NOT abandon (CHARACTER)")
-                end
+        SetButtonColor(f.btnChar, "Character", (not inChr) and "inactive" or (disChr and "disabled" or "active"))
+        f.btnChar:SetScript("OnClick", function(_, mouseButton)
+            if not inChr then
+                if mouseButton == "RightButton" then return end
+                SaveID(false)
+                return
+            end
+
+            InitSV()
+            local key = GetScopeKey()
+            if not key then return end
+            EnsureMapSets(key)
+            EnsureDisabledSets(key)
+            local chr2 = fr0z3nUI_QuestX_Char[key]
+            local chrDis2 = fr0z3nUI_QuestX_CharSettings.disabled[key]
+            local title2 = GetQuestTitleSafe(qid) or tostring(qid)
+
+            if mouseButton == "RightButton" then
+                chr2[qid] = nil
+                chrDis2[qid] = nil
+                Print("Removed from CHARACTER list: " .. title2)
                 DoValidate()
-            end)
-        else
-            f.btnChar:SetText("Add to Character")
-            f.btnChar:SetScript("OnClick", function() SaveID(false) end)
-        end
+                return
+            end
+
+            if chrDis2[qid] then
+                chrDis2[qid] = nil
+                Print("'" .. title2 .. "' will now abandon (CHARACTER)")
+            else
+                chrDis2[qid] = true
+                Print("'" .. title2 .. "' will NOT abandon (CHARACTER)")
+            end
+            DoValidate()
+        end)
+
+        SetDynamicTip(f.btnChar, function()
+            if not qid then return "Character", "Enter a QuestID first." end
+            if not inChr then
+                if inAcc then
+                    return "Character (Inactive)", "Left-click: move to Character list", "(Removes from Account list)"
+                end
+                return "Character (Inactive)", "Left-click: add to Character list"
+            end
+            if disChr then
+                return "Character (Disabled)", "Left-click: re-enable auto-abandon (Character)", "Right-click: remove from Character list"
+            end
+            return "Character (Active)", "Left-click: disable auto-abandon (Character)", "Right-click: remove from Character list"
+        end)
     end
 end
 
