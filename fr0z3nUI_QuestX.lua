@@ -4,11 +4,23 @@ local function InitSV()
     fr0z3nUI_QuestX_Settings = fr0z3nUI_QuestX_Settings or { disabled = {} }
     fr0z3nUI_QuestX_CharSettings = fr0z3nUI_QuestX_CharSettings or { disabled = {} }
 
+    fr0z3nUI_QuestY_Acc = fr0z3nUI_QuestY_Acc or {}
+    fr0z3nUI_QuestY_Char = fr0z3nUI_QuestY_Char or {}
+    fr0z3nUI_QuestY_Settings = fr0z3nUI_QuestY_Settings or { disabled = {} }
+    fr0z3nUI_QuestY_CharSettings = fr0z3nUI_QuestY_CharSettings or { disabled = {} }
+
     if type(fr0z3nUI_QuestX_Settings.disabled) ~= "table" then
         fr0z3nUI_QuestX_Settings.disabled = {}
     end
     if type(fr0z3nUI_QuestX_CharSettings.disabled) ~= "table" then
         fr0z3nUI_QuestX_CharSettings.disabled = {}
+    end
+
+    if type(fr0z3nUI_QuestY_Settings.disabled) ~= "table" then
+        fr0z3nUI_QuestY_Settings.disabled = {}
+    end
+    if type(fr0z3nUI_QuestY_CharSettings.disabled) ~= "table" then
+        fr0z3nUI_QuestY_CharSettings.disabled = {}
     end
 
     if fr0z3nUI_QuestX_Settings.scopeMode == nil then
@@ -39,6 +51,8 @@ local function InitSV()
 
     NormalizeMapLists(fr0z3nUI_QuestX_Acc)
     NormalizeMapLists(fr0z3nUI_QuestX_Char)
+    NormalizeMapLists(fr0z3nUI_QuestY_Acc)
+    NormalizeMapLists(fr0z3nUI_QuestY_Char)
 end
 
 local function GetQuestTitleSafe(qid)
@@ -82,8 +96,74 @@ local function Print(msg)
     print("|cff00ccff[FQX]|r " .. tostring(msg or ""))
 end
 
+local function GetActiveQuestOfferIDSafe()
+    if type(_G) == "table" then
+        local f1 = rawget(_G, "GetQuestID")
+        if type(f1) == "function" then
+            local ok, v = pcall(f1)
+            if ok and type(v) == "number" and v > 0 then return v end
+        end
+        local f2 = rawget(_G, "QuestGetQuestID")
+        if type(f2) == "function" then
+            local ok, v = pcall(f2)
+            if ok and type(v) == "number" and v > 0 then return v end
+        end
+    end
+    return nil
+end
+
 -- 1. Create UI Frame
 local f = CreateFrame("Frame", "fr0z3nUIQuestXFrame", UIParent, "BasicFrameTemplateWithInset")
+
+do
+    -- Unify styling: borderless + darker background (like FGO/FQT).
+    if f.NineSlice and f.NineSlice.Hide then f.NineSlice:Hide() end
+    if f.Bg and f.Bg.Hide then f.Bg:Hide() end
+    if f.TitleBg and f.TitleBg.Hide then f.TitleBg:Hide() end
+    if f.InsetBg and f.InsetBg.Hide then f.InsetBg:Hide() end
+    if f.Inset and f.Inset.Hide then f.Inset:Hide() end
+
+    local bg = CreateFrame("Frame", nil, f, "BackdropTemplate")
+    bg:SetAllPoints(f)
+    bg:SetBackdrop({
+        bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+        tile = true,
+        tileSize = 16,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 },
+    })
+    bg:SetBackdropColor(0, 0, 0, 0.85)
+    bg:SetFrameLevel((f.GetFrameLevel and f:GetFrameLevel() or 0))
+    f._unifiedBG = bg
+
+    local tabBarBG = CreateFrame("Frame", nil, f, "BackdropTemplate")
+    tabBarBG:SetPoint("TOPLEFT", f, "TOPLEFT", 4, -4)
+    tabBarBG:SetPoint("TOPRIGHT", f, "TOPRIGHT", -4, -4)
+    tabBarBG:SetHeight(26)
+    tabBarBG:SetBackdrop({
+        bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+        tile = true,
+        tileSize = 16,
+        insets = { left = 0, right = 0, top = 0, bottom = 0 },
+    })
+    tabBarBG:SetBackdropColor(0, 0, 0, 0.92)
+    tabBarBG:SetFrameLevel((f.GetFrameLevel and f:GetFrameLevel() or 0) + 1)
+    f._tabBarBG = tabBarBG
+
+    local closeBtn = f.CloseButton
+    if not closeBtn then
+        closeBtn = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+    end
+    if closeBtn and closeBtn.ClearAllPoints and closeBtn.SetPoint then
+        closeBtn:ClearAllPoints()
+        closeBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -6, -6)
+        if closeBtn.SetFrameLevel then
+            closeBtn:SetFrameLevel((f.GetFrameLevel and f:GetFrameLevel() or 0) + 20)
+        end
+        closeBtn:SetScript("OnClick", function() if f and f.Hide then f:Hide() end end)
+    end
+
+    f._closeBtn = closeBtn
+end
 
 -- Allow closing with Escape.
 do
@@ -114,28 +194,135 @@ do
     local t = f.TitleText
     if not t then
         t = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        t:SetPoint("TOPLEFT", 12, -10)
-        t:SetJustifyH("LEFT")
+        t:SetJustifyH("RIGHT")
+    end
+
+    if t.SetParent and f._tabBarBG then
+        t:SetParent(f._tabBarBG)
+    end
+    if t.ClearAllPoints and t.SetPoint then
+        t:ClearAllPoints()
+        local closeBtn = f._closeBtn or f.CloseButton
+        if closeBtn then
+            t:SetPoint("RIGHT", closeBtn, "LEFT", -6, 0)
+        else
+            t:SetPoint("TOPRIGHT", f, "TOPRIGHT", -26, -6)
+        end
     end
     if t.SetText then
-        t:SetText("|cff00ccff[FQX]|r QuestX")
+        -- Title is just the addon prefix; the active tab label is shown in the body.
+        t:SetText("|cff00ccff[FQX]|r")
+    end
+    do
+        local fontPath, fontSize, fontFlags = t:GetFont()
+        if fontPath and fontSize then
+            t:SetFont(fontPath, fontSize + 2, fontFlags)
+        end
     end
     f.title = t
 end
+
+-- Active module label (top-left body).
+local modeLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+modeLabel:SetPoint("TOPLEFT", 12, -34)
+modeLabel:SetJustifyH("LEFT")
+modeLabel:SetText("QuestX")
+f.modeLabel = modeLabel
+
+-- Tab content panels (QuestX/QuestY). Most controls are shared, but some are tab-specific.
+local panelQuestX = CreateFrame("Frame", nil, f)
+panelQuestX:SetAllPoints()
+f.panelQuestX = panelQuestX
+
+local panelQuestY = CreateFrame("Frame", nil, f)
+panelQuestY:SetAllPoints()
+panelQuestY:Hide()
+f.panelQuestY = panelQuestY
+
+-- Tabs
+local function StyleTab(btn, active)
+    if not (btn and btn.GetFontString) then return end
+    local fs = btn:GetFontString()
+    if fs and fs.SetTextColor then
+        if active then
+            fs:SetTextColor(1.0, 0.82, 0.0, 1)
+        else
+            fs:SetTextColor(0.70, 0.70, 0.70, 1)
+        end
+    end
+end
+
+local function SizeTabToText(btn)
+    if not btn then return end
+    local fs = (btn.GetFontString and btn:GetFontString()) or btn.Text or btn.text
+    local w = fs and fs.GetStringWidth and fs:GetStringWidth() or 0
+    w = (tonumber(w) or 0) + 24
+    if w < 60 then w = 60 end
+    if btn.SetSize then btn:SetSize(w, 18) end
+end
+
+local function RaiseActiveTab()
+    local base = (f._tabBarBG and f._tabBarBG.GetFrameLevel and f._tabBarBG:GetFrameLevel())
+        or (f.GetFrameLevel and f:GetFrameLevel())
+        or 0
+    base = base + 2
+    if f.tab1 and f.tab1.SetFrameLevel then f.tab1:SetFrameLevel(base + ((f.activeTabID == 1) and 2 or 1)) end
+    if f.tab2 and f.tab2.SetFrameLevel then f.tab2:SetFrameLevel(base + ((f.activeTabID == 2) and 2 or 1)) end
+end
+
+local function SelectTab(tabID)
+    f.activeTabID = tabID
+
+    local isQuestX = (tabID == 1)
+    if f.panelQuestX then f.panelQuestX:SetShown(isQuestX) end
+    if f.panelQuestY then f.panelQuestY:SetShown(not isQuestX) end
+    if f.modeLabel then
+        f.modeLabel:SetText(isQuestX and "QuestX" or "QuestY")
+    end
+
+    StyleTab(f.tab1, isQuestX)
+    StyleTab(f.tab2, not isQuestX)
+    RaiseActiveTab()
+
+    if editBox and editBox.GetText and editBox:GetText() ~= "" then
+        C_Timer.After(0, DoValidate)
+    else
+        if f and f._placeholder then f._placeholder:Show() end
+    end
+end
+
+local tab1 = CreateFrame("Button", "$parentTab1", f, "UIPanelButtonTemplate")
+tab1:SetID(1)
+tab1:SetText("QuestX")
+SizeTabToText(tab1)
+tab1:ClearAllPoints()
+tab1:SetPoint("LEFT", f._tabBarBG or f, "LEFT", 8, 0)
+tab1:SetScript("OnClick", function(self) SelectTab(self:GetID()) end)
+f.tab1 = tab1
+
+local tab2 = CreateFrame("Button", "$parentTab2", f, "UIPanelButtonTemplate")
+tab2:SetID(2)
+tab2:SetText("QuestY")
+SizeTabToText(tab2)
+tab2:ClearAllPoints()
+tab2:SetPoint("LEFT", tab1, "RIGHT", -8, 0)
+tab2:SetScript("OnClick", function(self) SelectTab(self:GetID()) end)
+f.tab2 = tab2
+SelectTab(1)
 
 local function UpdateScopeButton()
     if not f.btnScope then return end
     local mode = GetScopeMode()
     if mode == "MAP" then
-        f.btnScope:SetText("Scope: MAP")
+        f.btnScope:SetText("MAP")
     else
-        f.btnScope:SetText("Scope: RESTING")
+        f.btnScope:SetText("RESTING")
     end
 end
 
 local btnScope = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-btnScope:SetSize(120, 20)
-btnScope:SetPoint("TOPRIGHT", -34, -24)
+btnScope:SetSize(90, 22)
+btnScope:SetPoint("BOTTOMLEFT", 10, 10)
 btnScope:SetScript("OnClick", function()
     InitSV()
     local cur = GetScopeMode()
@@ -153,7 +340,7 @@ btnScope:SetScript("OnEnter", function()
     if GameTooltip then
         GameTooltip:SetOwner(f, "ANCHOR_NONE")
         GameTooltip:ClearAllPoints()
-        GameTooltip:SetPoint("TOPRIGHT", btnScope, "BOTTOMRIGHT", 0, -6)
+        GameTooltip:SetPoint("BOTTOMLEFT", btnScope, "TOPLEFT", 0, 8)
         GameTooltip:SetText("Auto-Abandon Scope")
         GameTooltip:AddLine("MAP: uses current mapID; runs anywhere.", 1, 1, 1, true)
         GameTooltip:AddLine("RESTING: uses one shared list; only runs while resting.", 1, 1, 1, true)
@@ -166,9 +353,12 @@ end)
 f.btnScope = btnScope
 UpdateScopeButton()
 
+-- Scope only belongs to QuestX tab.
+btnScope:SetParent(panelQuestX)
+
 editBox = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
 editBox:SetSize(150, 30)
-editBox:SetPoint("TOP", 0, -30)
+editBox:SetPoint("TOP", 0, -44)
 editBox:SetAutoFocus(false)
 editBox:SetNumeric(true)
 
@@ -236,11 +426,34 @@ reasonLabel:SetText("")
 f.reasonLabel = reasonLabel
 
 -- Helper to save IDs
-local function EnsureMapSets(mapID)
+local function EnsureQuestSets(mode, mapID)
+    if not (mode and mapID) then return end
+    if mode == "Y" then
+        fr0z3nUI_QuestY_Acc[mapID] = fr0z3nUI_QuestY_Acc[mapID] or {}
+        fr0z3nUI_QuestY_Char[mapID] = fr0z3nUI_QuestY_Char[mapID] or {}
+
+        if fr0z3nUI_QuestY_Acc[mapID][1] ~= nil then
+            local set = {}
+            for _, qid in ipairs(fr0z3nUI_QuestY_Acc[mapID]) do
+                qid = tonumber(qid)
+                if qid then set[qid] = true end
+            end
+            fr0z3nUI_QuestY_Acc[mapID] = set
+        end
+        if fr0z3nUI_QuestY_Char[mapID][1] ~= nil then
+            local set = {}
+            for _, qid in ipairs(fr0z3nUI_QuestY_Char[mapID]) do
+                qid = tonumber(qid)
+                if qid then set[qid] = true end
+            end
+            fr0z3nUI_QuestY_Char[mapID] = set
+        end
+        return
+    end
+
     fr0z3nUI_QuestX_Acc[mapID] = fr0z3nUI_QuestX_Acc[mapID] or {}
     fr0z3nUI_QuestX_Char[mapID] = fr0z3nUI_QuestX_Char[mapID] or {}
 
-    -- If an older array slipped through, migrate it now.
     if fr0z3nUI_QuestX_Acc[mapID][1] ~= nil then
         local set = {}
         for _, qid in ipairs(fr0z3nUI_QuestX_Acc[mapID]) do
@@ -259,10 +472,37 @@ local function EnsureMapSets(mapID)
     end
 end
 
-local function EnsureDisabledSets(mapID)
+local function EnsureQuestDisabledSets(mode, mapID)
     InitSV()
+    if mode == "Y" then
+        fr0z3nUI_QuestY_Settings.disabled[mapID] = fr0z3nUI_QuestY_Settings.disabled[mapID] or {}
+        fr0z3nUI_QuestY_CharSettings.disabled[mapID] = fr0z3nUI_QuestY_CharSettings.disabled[mapID] or {}
+        return
+    end
     fr0z3nUI_QuestX_Settings.disabled[mapID] = fr0z3nUI_QuestX_Settings.disabled[mapID] or {}
     fr0z3nUI_QuestX_CharSettings.disabled[mapID] = fr0z3nUI_QuestX_CharSettings.disabled[mapID] or {}
+end
+
+local function GetActiveModeKey()
+    return (f.activeTabID == 2) and "Y" or "X"
+end
+
+local function GetActiveScopeKeyForUI()
+    if GetActiveModeKey() == "Y" then
+        return GetBestMapIDSafe()
+    end
+    return GetScopeKey()
+end
+
+local function GetActiveTablesForUI(scopeKey)
+    if GetActiveModeKey() == "Y" then
+        EnsureQuestSets("Y", scopeKey)
+        EnsureQuestDisabledSets("Y", scopeKey)
+        return fr0z3nUI_QuestY_Acc[scopeKey], fr0z3nUI_QuestY_Char[scopeKey], fr0z3nUI_QuestY_Settings.disabled[scopeKey], fr0z3nUI_QuestY_CharSettings.disabled[scopeKey]
+    end
+    EnsureQuestSets("X", scopeKey)
+    EnsureQuestDisabledSets("X", scopeKey)
+    return fr0z3nUI_QuestX_Acc[scopeKey], fr0z3nUI_QuestX_Char[scopeKey], fr0z3nUI_QuestX_Settings.disabled[scopeKey], fr0z3nUI_QuestX_CharSettings.disabled[scopeKey]
 end
 
 local function SetButtonState(btn, label, isDisabled)
@@ -314,15 +554,10 @@ end
 local function SaveID(isAccount)
     InitSV()
     local qid = f.validQID or tonumber(editBox:GetText())
-    local scopeKey = GetScopeKey()
+    local scopeKey = GetActiveScopeKeyForUI()
     if not qid or not scopeKey then return end
 
-    EnsureMapSets(scopeKey)
-    EnsureDisabledSets(scopeKey)
-    local acc = fr0z3nUI_QuestX_Acc[scopeKey]
-    local chr = fr0z3nUI_QuestX_Char[scopeKey]
-    local accDis = fr0z3nUI_QuestX_Settings.disabled[scopeKey]
-    local chrDis = fr0z3nUI_QuestX_CharSettings.disabled[scopeKey]
+    local acc, chr, accDis, chrDis = GetActiveTablesForUI(scopeKey)
     local title = GetQuestTitleSafe(qid) or tostring(qid)
 
     if isAccount then
@@ -411,7 +646,7 @@ end
 
 DoValidate = function()
     InitSV()
-    local scopeKey = GetScopeKey()
+    local scopeKey = GetActiveScopeKeyForUI()
     local text = (editBox:GetText() or "")
     if text == "" then
         ClearValidationUI()
@@ -425,12 +660,7 @@ DoValidate = function()
         return
     end
 
-    EnsureMapSets(scopeKey)
-    local acc = fr0z3nUI_QuestX_Acc[scopeKey]
-    local chr = fr0z3nUI_QuestX_Char[scopeKey]
-    EnsureDisabledSets(scopeKey)
-    local accDis = fr0z3nUI_QuestX_Settings.disabled[scopeKey]
-    local chrDis = fr0z3nUI_QuestX_CharSettings.disabled[scopeKey]
+    local acc, chr, accDis, chrDis = GetActiveTablesForUI(scopeKey)
     local title = GetQuestTitleSafe(qid)
     if title then
         if f.nameLabel then f.nameLabel:SetText("|cffffff00" .. title .. "|r") end
@@ -464,12 +694,9 @@ DoValidate = function()
             end
 
             InitSV()
-            local key = GetScopeKey()
+            local key = GetActiveScopeKeyForUI()
             if not key then return end
-            EnsureMapSets(key)
-            EnsureDisabledSets(key)
-            local acc2 = fr0z3nUI_QuestX_Acc[key]
-            local accDis2 = fr0z3nUI_QuestX_Settings.disabled[key]
+            local acc2, _, accDis2 = GetActiveTablesForUI(key)
             local title2 = GetQuestTitleSafe(qid) or tostring(qid)
 
             if mouseButton == "RightButton" then
@@ -516,12 +743,9 @@ DoValidate = function()
             end
 
             InitSV()
-            local key = GetScopeKey()
+            local key = GetActiveScopeKeyForUI()
             if not key then return end
-            EnsureMapSets(key)
-            EnsureDisabledSets(key)
-            local chr2 = fr0z3nUI_QuestX_Char[key]
-            local chrDis2 = fr0z3nUI_QuestX_CharSettings.disabled[key]
+            local _, chr2, _, chrDis2 = GetActiveTablesForUI(key)
             local title2 = GetQuestTitleSafe(qid) or tostring(qid)
 
             if mouseButton == "RightButton" then
@@ -555,6 +779,38 @@ DoValidate = function()
             end
             return "Character (Active)", "Left-click: disable auto-abandon (Character)", "Right-click: remove from Character list"
         end)
+    end
+end
+
+-- QuestY: auto-accept quests in its DB (map-based).
+local function TryAutoAcceptQuestY()
+    InitSV()
+    local mapID = GetBestMapIDSafe()
+    if not mapID then return end
+
+    EnsureQuestSets("Y", mapID)
+    EnsureQuestDisabledSets("Y", mapID)
+
+    local qid = GetActiveQuestOfferIDSafe()
+    if not qid then return end
+
+    local acc = fr0z3nUI_QuestY_Acc[mapID]
+    local chr = fr0z3nUI_QuestY_Char[mapID]
+    local accDis = fr0z3nUI_QuestY_Settings.disabled[mapID]
+    local chrDis = fr0z3nUI_QuestY_CharSettings.disabled[mapID]
+
+    local allow = false
+    if acc and acc[qid] and not (accDis and accDis[qid]) then allow = true end
+    if chr and chr[qid] and not (chrDis and chrDis[qid]) then allow = true end
+    if not allow then return end
+
+    local acceptFunc = _G and _G["AcceptQuest"]
+    if type(acceptFunc) ~= "function" then return end
+
+    local title = GetQuestTitleSafe(qid) or tostring(qid)
+    local ok = pcall(acceptFunc)
+    if ok then
+        Print("Auto-accepted: " .. title)
     end
 end
 
@@ -646,6 +902,7 @@ f:RegisterEvent("PLAYER_ENTERING_WORLD")
 f:RegisterEvent("PLAYER_REGEN_ENABLED") -- Trigger after combat ends
 f:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 f:RegisterEvent("QUEST_ACCEPTED")
+f:RegisterEvent("QUEST_DETAIL")
 
 local function QueueTryAbandon()
     if not ShouldTryAbandonNow() then return end
@@ -660,6 +917,11 @@ f:SetScript("OnEvent", function(_, event)
     if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
         InitSV()
         UpdateScopeButton()
+    end
+
+    if event == "QUEST_DETAIL" then
+        -- QuestY runs regardless of which tab is open.
+        C_Timer.After(0, TryAutoAcceptQuestY)
     end
 
     QueueTryAbandon()
